@@ -1,0 +1,23 @@
+{
+  "name": "weixin-follower-info",
+  "version": "1.0.0",
+  "description": "批量获取微信公众号订阅用户信息",
+  "main": "fetchWxUser.js",
+  "scripts": {
+    "test": "mocha test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/BiteBit/weixin-follower-info.git"
+  },
+  "keywords": [
+    "weixin",
+    "wechat"
+  ],
+  "author": "BiteBit",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/BiteBit/weixin-follower-info/issues"
+  },
+  "homepage": "https://github.com/BiteBit/weixin-follower-info#readme"
+}
