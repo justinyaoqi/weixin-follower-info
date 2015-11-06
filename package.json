@@ -19,5 +19,10 @@
   "bugs": {
     "url": "https://github.com/BiteBit/weixin-follower-info/issues"
   },
-  "homepage": "https://github.com/BiteBit/weixin-follower-info#readme"
+  "homepage": "https://github.com/BiteBit/weixin-follower-info#readme",
+  "dependencies": {
+    "async": "^1.5.0",
+    "request": "^2.65.0",
+    "underscore": "^1.8.3"
+  }
 }
