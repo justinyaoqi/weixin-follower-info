@@ -9,10 +9,12 @@ STATUS = {FREE:0, RUNNING:1}
 ###
 拉取公众号下所有关注微信的用户信息
 events
-'task start', Error, startOpenId
-'task finish', Error, info
-'user list', Error, userList
-'user', Error, userInfo
+'task start',       Error, startOpenId
+'task finish',      Error, info
+'user list start',  Error, openid
+'user list finish', Error, userList
+'user start',       Error, openid
+'user finish',      Error, userInfo
 ###
 class FetchWxUser extends EventEmitter
   # opt.token
@@ -27,7 +29,7 @@ class FetchWxUser extends EventEmitter
     @opt.token ?= ''
     @opt.tokenUrl ?= ''
     @opt.nextOpenid ?= null
-    @opt.concurrency ?= 10
+    @opt.concurrency ?= 30
     @opt.concurrency = Math.max(@opt.concurrency, 1)
     @opt.concurrency = Math.min(@opt.concurrency, 50)
     @opt.retryTimes ?= 3
@@ -49,8 +51,10 @@ class FetchWxUser extends EventEmitter
   init: ()->
     @mainQueue = async.queue (job, done)=>
       @fetchedPage++
+
+      @emit 'user list start', null, job
       @getUserList job, (err, data)=>
-        @emit 'user list', err, data
+        @emit 'user list finish', err, data
 
         if data and data.next_openid
           @mainQueue.push {nextId: data.next_openid}
@@ -68,7 +72,8 @@ class FetchWxUser extends EventEmitter
       @emit 'task finish', null, @stat()
       @reset()
 
-  start: (openid)->
+  start: (openid, debug)->
+    console.log @opt if debug
     if @status == STATUS.RUNNING
       @emit 'task start', new Error 'task is running'
       return
@@ -86,6 +91,7 @@ class FetchWxUser extends EventEmitter
 
   getUsersInfo: (openIds, done)->
     queue = async.queue (job, _done)=>
+      @emit 'user start', null, job
       @getJson @genUserInfoUrl(job.openid), (error, userInfo)->
         if error
           _done error
@@ -99,7 +105,7 @@ class FetchWxUser extends EventEmitter
     for openid in openIds
       queue.push {openid}, (err, userInfo)=>
         @fetchedUser++
-        @emit 'user', err, userInfo
+        @emit 'user finish', err, userInfo
 
   stat: ()->
     status: @status
