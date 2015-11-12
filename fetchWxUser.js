@@ -3,13 +3,13 @@ var EventEmitter, FetchWxUser, STATUS, _, async, request,
   extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
   hasProp = {}.hasOwnProperty;
 
-async = require('async');
-
-request = require('request');
-
 _ = require('underscore');
 
+async = require('async');
+
 EventEmitter = require('events').EventEmitter;
+
+request = require('request');
 
 STATUS = {
   FREE: 0,
@@ -26,13 +26,15 @@ events
 'user list finish', Error, userList
 'user start',       Error, openid
 'user finish',      Error, userInfo
+'token error',      Error, oldToken
+'taken set',        Error, newTOken
  */
 
 FetchWxUser = (function(superClass) {
   extend(FetchWxUser, superClass);
 
   function FetchWxUser(opt1) {
-    var base, base1, base2, base3, base4, base5;
+    var base, base1, base2, base3, base4, base5, base6, base7;
     this.opt = opt1;
     if (this.opt == null) {
       this.opt = {};
@@ -43,23 +45,30 @@ FetchWxUser = (function(superClass) {
     if ((base1 = this.opt).tokenUrl == null) {
       base1.tokenUrl = '';
     }
-    if ((base2 = this.opt).nextOpenid == null) {
-      base2.nextOpenid = null;
+    if ((base2 = this.opt).tokenFun == null) {
+      base2.tokenFun = null;
     }
-    if ((base3 = this.opt).concurrency == null) {
-      base3.concurrency = 30;
+    if ((base3 = this.opt).nextOpenid == null) {
+      base3.nextOpenid = null;
+    }
+    if ((base4 = this.opt).concurrency == null) {
+      base4.concurrency = 30;
     }
     this.opt.concurrency = Math.max(this.opt.concurrency, 1);
     this.opt.concurrency = Math.min(this.opt.concurrency, 50);
-    if ((base4 = this.opt).retryTimes == null) {
-      base4.retryTimes = 3;
+    if ((base5 = this.opt).retryTimes == null) {
+      base5.retryTimes = 3;
     }
-    if ((base5 = this.opt).retryInterval == null) {
-      base5.retryInterval = 1000;
+    if ((base6 = this.opt).retryInterval == null) {
+      base6.retryInterval = 1000;
+    }
+    if ((base7 = this.opt).maxPage == null) {
+      base7.maxPage = Infinity;
     }
     this.status = STATUS.FREE;
     this.fetchedPage = 0;
     this.fetchedUser = 0;
+    this.startAt = 0;
     this.mainQueue = {};
     this.init();
   }
@@ -67,13 +76,17 @@ FetchWxUser = (function(superClass) {
   FetchWxUser.prototype.reset = function() {
     this.status = STATUS.FREE;
     this.fetchedPage = 0;
-    return this.fetchedUser = 0;
+    this.fetchedUser = 0;
+    return this.startAt = 0;
   };
 
   FetchWxUser.prototype.init = function() {
     this.mainQueue = async.queue((function(_this) {
       return function(job, done) {
         _this.fetchedPage++;
+        if (_this.fetchedPage > _this.opt.maxPage) {
+          return done(null);
+        }
         _this.emit('user list start', null, job);
         return _this.getUserList(job, function(err, data) {
           var openIds, ref;
@@ -112,6 +125,7 @@ FetchWxUser = (function(superClass) {
       this.emit('task start', new Error('task is running'));
       return;
     }
+    this.startAt = Date.now();
     if (openid) {
       this.mainQueue.push({
         nextId: openid
@@ -136,13 +150,7 @@ FetchWxUser = (function(superClass) {
     queue = async.queue((function(_this) {
       return function(job, _done) {
         _this.emit('user start', null, job);
-        return _this.getJson(_this.genUserInfoUrl(job.openid), function(error, userInfo) {
-          if (error) {
-            return _done(error);
-          } else {
-            return _done(error, userInfo);
-          }
-        });
+        return _this.getJson(_this.genUserInfoUrl(job.openid), _done);
       };
     })(this), this.opt.concurrency);
     queue.drain = function() {
@@ -167,29 +175,34 @@ FetchWxUser = (function(superClass) {
     return {
       status: this.status,
       fetchedPage: this.fetchedPage,
-      fetchedUser: this.fetchedUser
+      fetchedUser: this.fetchedUser,
+      elapsed: Date.now() - this.startAt,
+      speed: (1000 * this.fetchedUser) / (Date.now() - this.startAt)
     };
   };
 
   FetchWxUser.prototype.getToken = function(done) {
     var url;
-    if (this.opt.tokenUrl) {
+    if (this.opt.tokenFun) {
+      return this.opt.tokenFun(done);
+    } else if (this.opt.tokenUrl) {
       url = this.opt.tokenUrl;
+      return this.getJson(url, done);
     } else if (this.opt.clientId && this.opt.clientSecret) {
       url = "https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=" + this.opt.clientId + "&secret=" + this.opt.clientSecret;
+      return this.getJson(url, done);
     } else {
       return done(null, {
         access_token: this.opt.token
       });
     }
-    return this.getJson(url, done);
   };
 
   FetchWxUser.prototype.genUserListUrl = function(openid) {
     var url;
     url = "https://api.weixin.qq.com/cgi-bin/user/get";
     if (openid) {
-      url += "?next_openid=" + openid;
+      url += "next_openid=" + openid;
     }
     return url;
   };
@@ -206,19 +219,22 @@ FetchWxUser = (function(superClass) {
       return function(_done) {
         var opt;
         opt = {
-          url: url,
-          json: true,
           qs: {
             access_token: _this.opt.token
           },
-          method: 'get'
+          url: url,
+          json: true,
+          method: 'get',
+          rejectUnauthorized: false
         };
         return request(opt, function(error, resp, body) {
           if (error) {
             return _done(error);
           } else if (body && body.errcode !== void 0) {
             if (body.errcode === 41001) {
+              _this.emit('token error', null, _this.opt.token);
               return _this.getToken(function(error, data) {
+                _this.emit('token set', error, data);
                 if (!error) {
                   _this.opt.token = data.access_token;
                 }
